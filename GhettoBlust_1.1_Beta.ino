@@ -340,7 +340,7 @@ void handleUserAction(byte action) {
           Serial.println("Resumed");
           musicPlayer.pausePlaying(false);
         }
-      waitForButtonOrTrackEnd() //go back to loop waiting for key or end of Track. 
+      waitForButtonOrTrackEnd() //go back to loop waiting for key or end of Track.
     }
     else if (action == 11)
     {
