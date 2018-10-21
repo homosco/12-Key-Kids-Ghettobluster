@@ -139,7 +139,7 @@ Adafruit_VS1053_FilePlayer musicPlayer = Adafruit_VS1053_FilePlayer(SHIELD_RESET
 
 
 void setup() {
-	   digitalWrite(DIG_IO_POWER_ON, HIGH);
+   digitalWrite(DIG_IO_POWER_ON, HIGH);
    pinMode(DIG_IO_POWER_ON, OUTPUT);
 
   #if defined(DEBUG)
@@ -206,6 +206,7 @@ void loop() {
   if (! musicPlayer.startPlayingFile(trackpath)) {
     // mp3player_fatal(__LINE__, ERR_OPEN_FILE, trackpath);
   }
+  // Wenn das hier drin ist funktioniert pause und Play nicht. Folglich muss hier eine WEnnschleife drum, mit if Pause = false do…… if = true  skip
   // file is now playing in the 'background' so now's a good time
   // to do something else like handling LEDs or buttons :)
   waitForButtonOrTrackEnd();
@@ -322,10 +323,10 @@ boolean hasLastTrackReached(int albumNo, int trackNo) {
 }
 
 void handleUserAction(byte action) {
-           if (action < 11)
+           if (action < 10) ; //Changed from 11 to 10. Because Key 10 shall become Play and Pause Button.
     {
       currentAlbum = (action-1); /// Warum -1 Stimmt das????? ============ >Todo< stimmt wenn Alben von 0 nach 9 durchgezählt werden Ich glaube ja.
-      currentTrack = 0; // stimmt das?? stimmte wenn tracks von 1 durchgezählt werden >Todo<
+      currentTrack = 0;
       //playCurrent();
     }
     // if a function button is pressed:
@@ -361,7 +362,7 @@ void handleUserAction(byte action) {
       if (hasLastTrackReached(currentAlbum, currentTrack))
       {
         currentTrack = 0;
-        Serial  << __LINE__ << ": " << "last track reached beginn grom beginningn" << "\n";
+        Serial  << __LINE__ << ": " << "last track reached beginn from beginningn" << "\n";
       }
       else {
       Serial << __LINE__ << ": " << "Play Next" << "\n";
