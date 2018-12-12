@@ -6,7 +6,7 @@
 #include <Adafruit_VS1053.h>
 #include <OnewireKeypadAlt.h>
 #include <SD.h>
-//#include <avr/pgmspace.h> //brauche ich nicht??
+#include <avr/pgmspace.h> //brauche ich nicht??
 
 // OneWireKeypad Setup
 
@@ -19,11 +19,11 @@ byte KEYS[] = {1, 2, 3,
 OnewireKeypad <Print, 12 > KP2(Serial, KEYS, 4, 3, A0, 4700, 1000, 4700, ExtremePrec);
 
 // uncomment to turn off DEBUG
-#define DEBUG 0
+#define DEBUG 1
 // while coding you can force reindexing the SD card
 #define FORCE_REINDEX false
 
-#define MAX_ALBUMS 9 // was 50 - 50 will consume 2 bytes * MAX_ALBUMS of dynamic memory (Idea, if we need more mem: save offsets in a second fixed length file _OFFSETS on SD card)
+#define MAX_ALBUMS 50 // will consume 2 bytes * MAX_ALBUMS of dynamic memory (Idea, if we need more mem: save offsets in a second fixed length file _OFFSETS on SD card)
 
 // struct to persist the config in the EEPROM
 struct state_t
@@ -107,6 +107,7 @@ char trackpath[IDX_LINE_LENGTH_W_LF];
 char albumpath[IDX_LINE_LENGTH_W_LF];
 File idxFile;
 byte userAction = 0;
+File root; // for directory print
 
 // the number of the pin that is used for the pushbuttons
 const int buttonsPin = A0;
@@ -119,6 +120,7 @@ const int buttonPressedDelay = 5000;
 
 // the current volume level, set to min at start
 byte volumeState = 254;
+
 byte buttonState = 0;   // not pressed(0), pressed(1), released(2) or held(3).
 
 //pressedButton
@@ -135,9 +137,6 @@ long lastBackButtonTime = 0;
 // create mp3 maker shield object
 Adafruit_VS1053_FilePlayer musicPlayer = Adafruit_VS1053_FilePlayer(SHIELD_RESET, SHIELD_CS, SHIELD_DCS, DREQ, CARDCS);
 
-
-
-
 void setup() {
   digitalWrite(DIG_IO_POWER_ON, HIGH);
   pinMode(DIG_IO_POWER_ON, OUTPUT);
@@ -149,9 +148,16 @@ void setup() {
   mp3player_dbg(__LINE__, MSG_SETUP);
   pinMode(13, OUTPUT);
   digitalWrite(13, LOW);
+
   if (!SD.begin(CARDCS)) {
     mp3player_fatal(__LINE__, ERR_NO_SD_CARD);
   }
+
+  root = SD.open("/");
+
+  printDirectory(root, 0);
+
+  Serial.println("done!");
 
   // initialise the music player
   if (! musicPlayer.begin()) { // initialise the music player
@@ -186,38 +192,56 @@ void setup() {
   // open Index File
   idxFile = getIndexFile(FILE_READ);
   mp3player_dbgi(__LINE__, MSG_AVAIL, idxFile.available());
-  musicPlayer.sineTest(0x44, 500);    // Make a tone to indicate VS1053 is working
 }
 
-/* ****************************************************************
+/**
    Main prog loop
 */
 void loop() {
   mp3player_dbg(__LINE__, MSG_LOOP_START);
-  // if Schleife um stop and play zu verhindern, wenn pause gedrückt ist. Wenn derzeitigige Lösung funktioniert (Verweis direkt zurück zu waitforaction.., dann kann diese Schleife weg.
-  // if (! musicPlayer.paused()) {
+
   // stop
   if (musicPlayer.playingMusic) {
     mp3player_dbg(__LINE__, MSG_STOP_PLAY, musicPlayer.currentTrack.name());
     musicPlayer.stopPlaying();
   }
+
   // play
   const char* trackpath = getCurrentTrackpath();
   mp3player_dbg(__LINE__, MSG_START_PLAY, trackpath);
   if (! musicPlayer.startPlayingFile(trackpath)) {
-    mp3player_fatal(__LINE__, ERR_OPEN_FILE, trackpath);
+    // mp3player_fatal(__LINE__, ERR_OPEN_FILE, trackpath);
   }
-  musicPlayer.pausePlaying(false);
-  //}
-  // Wenn das hier drin ist funktioniert pause und Play nicht. Folglich muss hier eine WEnnschleife drum, mit if Pause = false do…… if = true  skip
   // file is now playing in the 'background' so now's a good time
   // to do something else like handling LEDs or buttons :)
-  // Wait till button is released:
-
-  waitForReleaseButton();
-  delay(200);
-  saveState();
   waitForButtonOrTrackEnd();
+  delay(250);
+  saveState();
+}
+
+// Test to print directory:
+void printDirectory(File dir, int numTabs) {
+  while (true) {
+
+    File entry =  dir.openNextFile();
+    if (! entry) {
+      // no more files
+      break;
+    }
+    for (uint8_t i = 0; i < numTabs; i++) {
+      Serial.print('\t');
+    }
+    Serial.print(entry.name());
+    if (entry.isDirectory()) {
+      Serial.println("/");
+      printDirectory(entry, numTabs + 1);
+    } else {
+      // files have sizes, directories do not
+      Serial.print("\t\t");
+      Serial.println(entry.size(), DEC);
+    }
+    entry.close();
+  }
 }
 
 void saveState() {
@@ -233,16 +257,6 @@ void shutdownNow() {
   musicPlayer.GPIO_digitalWrite(GPIO_SHUTDOWN, HIGH);
 }
 
-void waitForReleaseButton() {
-  while (true) {
-    if (buttonState == 0 || buttonState == 2) {
-      break;
-    }
-    else {
-      buttonState = KP2.Key_State();
-    }
-  }
-}
 // checks the value of the potentiometer
 // if it has changed by 2 then set the new volume
 void checkVolume()
@@ -273,37 +287,49 @@ void checkVolume()
 
 
 void waitForButtonOrTrackEnd() {
-  while (true) {
+  bool exitLoop = false;
+  //unsigned long lastMultiButtonTS = 0;
+  while ( ! exitLoop ) {
     //btCount = 0;
     checkVolume();
-    pressedButton = KP2.Getkey();// checkButtons()
+    byte pressedButton = KP2.Getkey();// checkButtons()
     // Serial  << __LINE__ << ": " << "Button: " << pressedButton;
-    buttonState = KP2.Key_State();
-    if (pressedButton != 0 && pressedButton != 10) {
-      //Serial << __LINE__ << ": " << "Taste: " << pressedButton << " !  " << "State: " << buttonState << '\n';
-      lastPressedButton = pressedButton;
-      handleUserAction(pressedButton);
-      return;
+    byte buttonState = KP2.Key_State();
+    // check that button has been released
+    if (pressedButton != 0) {
+      bool exLoop = false;
+      while (!exLoop) {
+        if (buttonState != 2) {
+          buttonState = KP2.Key_State();
+        } else {
+          Serial << __LINE__ << ": " << "Taste: " << pressedButton << " !  ";
+          lastPressedButton = pressedButton;
+          // buttons released --> leave loop only if user action shall be executed
+          handleUserAction(pressedButton);
+          exitLoop = true;
+          exLoop = true;
+        }
+      }
     }
-    else if (pressedButton == 10) {
-      handlePause();
-    }
-    else if (!musicPlayer.playingMusic && !musicPlayer.paused()) {
+    else if (!musicPlayer.playingMusic)
+    {
       // play the next track
       currentTrack++;
-      // if the album is at the end of an album. We start at the first track again.
+      // if the album is at the end of an album we shutdown the player
+      // next startup the player will start at the next album (that why we handleUserAction first)
       if (hasLastTrackReached(currentAlbum, currentTrack))
       {
         currentTrack = 0;
+        saveState();
         //shutdownNow();
       }
-      return;
+      exitLoop = true;
     }
     else {
-      delay(8);
+      delay(10);
     } // end special actions
   }
-  mp3player_dbg(__LINE__, MSG_BUTTON, "Wait for Action loop end");
+  mp3player_dbg(__LINE__, MSG_BUTTON, "loop end");
 }
 
 int getOffset(int albumNo, int lineNo) {
@@ -317,7 +343,7 @@ boolean hasLastTrackReached(int albumNo, int trackNo) {
   } else {
     offsetOfNextAlbum = getOffset(albumNo + 1, 0);
   }
-  int offset = getOffset(albumNo, trackNo) + IDX_LINE_LENGTH_W_LF;
+  int offset = getOffset(albumNo, trackNo) + IDX_LINE_LENGTH_W_LF; //war trackNo + 1
   mp3player_dbgi(__LINE__, MSG_OFFSET, offset);
   mp3player_dbgi(__LINE__, MSG_OFFSET, offsetOfNextAlbum);
   if (offset >= offsetOfNextAlbum) {
@@ -326,79 +352,56 @@ boolean hasLastTrackReached(int albumNo, int trackNo) {
   return false;
 }
 
-void playLastTrackIfReachedFirst(){
-  while(!hasLastTrackReached(currentAlbum, currentTrack)){
-    currentTrack++;
-  }
-  currentTrack--;
-}
-
 void handleUserAction(byte action) {
-  if (action < 10) { //Changed from 11 to 10. Because Key 10 will become Play and Pause Button.
-    currentAlbum = (action - 1); // to make number of key fit numbers of Albums wich is 0 - 8
-    currentTrack = 0;
+  if (action < 11)
+  {
+    currentAlbum = (action - 1); /// Warum -1 Stimmt das????? ============ >Todo< stimmt wenn Alben von 0 nach 9 durchgezählt werden Ich glaube ja.
+    currentTrack = 0; // stimmt das?? stimmte wenn tracks von 1 durchgezählt werden >Todo<
     //playCurrent();
-    return;
   }
   // if a function button is pressed:
-  else if (action == 11) {
+  else if (action == 11)
+  {
     //musicPlayer.stopPlaying(); kommt eh.
     long times = millis();
     // this is the second press within 1 sec., so we
     // got to the previous track:
-    // Serial.print((times - lastBackButtonTime));
+    Serial.print((times - lastBackButtonTime));
     if (lastPressedButton == 11 && ((times - lastBackButtonTime) < buttonPressedDelay))
     {
       currentTrack--;
       if (currentTrack < 0) {
-        playLastTrackIfReachedFirst(); //numberOfTracks[currentAlbum]
+        currentTrack = 0; //numberOfTracks[currentAlbum]
       }
       //playPrevious();
       Serial.println("Zurück Pressed--- fast again -> play previous");
       lastBackButtonTime = times;
     }
-    else {
+    else
+    {
       //playCurrent();
       Serial.println("Zurück Pressed--- once -> play current from beginning");
       lastBackButtonTime = times;
     }
+
   }
-  else if (action == 12) {
-    long times = millis();
+  else if (action == 12)
+  {
     currentTrack++;
     // fehtl noch korrektur wenn es Datei nicht gibt !!!!
     if (hasLastTrackReached(currentAlbum, currentTrack))
     {
       currentTrack = 0;
-      Serial  << __LINE__ << ": " << "last track reached beginn from beginningn" << "\n";
+      Serial  << __LINE__ << ": " << "last track reached beginn grom beginningn" << "\n";
     }
     else {
       Serial << __LINE__ << ": " << "Play Next" << "\n";
     }
-    lastBackButtonTime = times;
-    return;
   }
-  // mp3player_dbgi(__LINE__, MSG_ALBUM, currentAlbum);
-  // mp3player_dbgi(__LINE__, MSG_TRACK, currentTrack);
-  // saveState();
+  mp3player_dbgi(__LINE__, MSG_ALBUM, currentAlbum);
+  mp3player_dbgi(__LINE__, MSG_TRACK, currentTrack);
+  saveState();
 }
-
-void handlePause() { // if Button is 10 pause Song. if already paused. start playing again:
-  if (! musicPlayer.paused()) {
-    Serial.println("Paused");  // mp3player_dbg(__LINE__, MSG_BUTTON, "Wait for Action loop end");
-    musicPlayer.pausePlaying(true);
-    waitForReleaseButton();
-    return;
-  }
-  else {
-    Serial.println("Resumed");
-    musicPlayer.pausePlaying(false);
-    waitForReleaseButton();
-    return;
-  }
-  //go back to loop waiting for key or end of Track.
-}
-
 
 File getIndexFile(uint8_t mode) {
   return SD.open("/_IDX", mode);
@@ -454,7 +457,7 @@ void updateIndex() {
   // start generation
   int len = 0;
   int offset = 0;
-  int albumNo = -1; //warum -1 ????
+  int albumNo = -1;
   // create a new index
   mp3player_dbg(__LINE__, MSG_NEW_INDEX);
   File rootDir = SD.open("/");
