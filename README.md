@@ -1,6 +1,6 @@
 # 12 Key Kids-GhettoBluster
 Arduino MP3 player for kidz. (Inspired by Hörbert which can only play WAV and 9 albums and has no display)
-No text for small kidz -> TFT to display a picture of the album.
+
 Buttons:
 - Track Fwd
 - Track Bwd
