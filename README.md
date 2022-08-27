@@ -1,10 +1,11 @@
 # 12 Key Kids-GhettoBluster
-Arduino MP3 player for kidz. (Inspired by Hörbert which can only play WAV and 9 albums and has no display)
 
-Buttons:
+Arduino MP3 player for Kids. (Inspired by Hörbert which can only play WAV and 9 albums and has no display)
+
+## Buttons:
 - Track Fwd
 - Track Bwd
-- 9 Albums
+- 9 Buttons to choose folders. 
 - Play/Pause
 
 ## Hardware
@@ -13,15 +14,14 @@ Buttons:
  - Adafruit PowerBoost 500 Charger - Rechargeable 5V Lipo USB Boost @ 500mA+
  - LiPo Akku  (3.7 V, 2 mm JST)
  - 12 Button Keypad
- - any Micro SD card
+ - Micro SD card
+ - 2 4 Ohm Speaker
 
 ## Code
-
 Used Code from: 
 - https://github.com/golesny/12mp3/tree/master/mp3player
 - MORE TO BE ADDED
 - 
-
 
 ## Links and References
  - https://learn.adafruit.com/adafruit-music-maker-shield-vs1053-mp3-wav-wave-ogg-vorbis-player/library-reference
